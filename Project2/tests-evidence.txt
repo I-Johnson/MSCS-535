@@ -1,0 +1,37 @@
+Project 2 test evidence - generated 2026-11-21 09:22 PST
+Vulnerable app: http://localhost:4101 (Node v22.23.3, Express) | Secured app: http://localhost:4102
+
+=== A. VULNERABLE APP ===
+--- A1. Stored XSS: posting '<script>alert(document.cookie)</script>' as a comment ---
+POST /comment -> HTTP 302
+GET / renders the payload back as a live script tag (unencoded):
+<b>attacker</b>: <script>alert(document.cookie)</script></p>
+
+--- A2. Reflected XSS: GET /search?q=<script>alert(1)</script> ---
+Results for: <script>alert(1)</script></p>
+(The query text is echoed into the page with no encoding - the browser would execute it.)
+
+--- A3. Dynamic evaluation abuse: /calc passes the expr parameter to eval() ---
+Legitimate use:
+<p>expr = 2*(3+4)</p><p>result = 14</p>
+Attack - arbitrary JavaScript executes with the server's privileges:
+<p>expr = process.version</p><p>result = v22.23.3</p>
+<p>expr = require('fs').existsSync('/etc/passwd')</p><p>result = true</p>
+(The payload read the Node version and confirmed it can touch the server filesystem - full remote code execution, not a calculation.)
+
+=== B. SECURED APP (mitigations) ===
+--- B1. Same stored-XSS payload is stored but rendered inert (HTML-encoded): ---
+POST /comment -> HTTP 302
+<b>attacker</b>: &lt;script&gt;alert(document.cookie)&lt;/script&gt;</p>
+
+--- B2. Content Security Policy on every response (inline script blocked): ---
+Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'
+X-Content-Type-Options: nosniff
+
+--- B3. Reflected payload is encoded as well: ---
+Results for: &lt;script&gt;alert(1)&lt;/script&gt;</p>
+
+--- B4. eval() removed: whitelist parser rejects code, still does real math ---
+<p>expr = process.version</p><p>result = Error: only numbers and + - * / ( ) are allowed</p>
+<p>expr = require(&#39;fs&#39;).existsSync(&#39;/etc/passwd&#39;)</p><p>result = Error: only numbers and + - * / ( ) are allowed</p>
+<p>expr = 2*(3+4)</p><p>result = 14</p>
