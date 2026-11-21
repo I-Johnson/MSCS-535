@@ -1,0 +1,21 @@
+Project 4 test evidence - generated 2026-11-21 09:30 PST
+Setup: genuine TLS server on :4301 (cert signed by a local trusted CA, CN=localhost).
+Simulated MITM on :4302 (self-made localhost cert from an attacker's own CA).
+
+--- 1. Insecure client (rejectUnauthorized=false) to the GENUINE server ---
+connected to port 4301: authorized=false (validation was OFF)
+received: SECRET-MESSAGE: account balance is 4200.00
+
+--- 2. Insecure client to the ROGUE server: it accepts the attacker's certificate ---
+connected to port 4302: authorized=false (validation was OFF)
+received: INTERCEPTED-FAKE: account balance is 0.00
+(With validation off, the client cannot tell the MITM from the real server.)
+
+--- 3. Secure client to the ROGUE server: certificate chain rejected ---
+connection to port 4302 REJECTED: unable to verify the first certificate
+
+--- 4. Secure client to the GENUINE server: validated TLS session ---
+connected to port 4301: authorized=true
+protocol=TLSv1.3 cipher=TLS_AES_256_GCM_SHA384
+peer cert subject=localhost issuer=PayDemo Local CA
+received: SECRET-MESSAGE: account balance is 4200.00
