@@ -1,0 +1,64 @@
+PSEUDOCODE: SECURE ONLINE COMMUNICATION SYSTEM WITH TLS
+(Project 4 - TLS communication that resists man-in-the-middle attacks)
+
+MODULE SecureChannel
+
+// Goal: two parties exchange messages that a network attacker can neither
+// read, modify, nor forward while impersonating either side.
+
+PROCEDURE server_listen(port):
+    cert     <- LOAD server certificate (signed by a trusted CA)
+    key      <- LOAD server private key
+    listener <- TLS_LISTEN(port, cert, key,
+                           min_version = TLS1.2, prefer TLS1.3)
+    LOOP:
+        conn <- listener.ACCEPT()
+        SPAWN handle_session(conn)
+
+PROCEDURE client_connect(hostname, port):
+    // DEFENSE 1 (MITM): certificate chain validation. The client trusts only
+    // certificates signed by a known CA. A self-signed or attacker-made
+    // certificate is rejected here.
+    // DEFENSE 2 (MITM): hostname verification. The certificate must name the
+    // host we dialed, so a valid certificate for another site cannot be reused
+    // to impersonate this one.
+    conn <- TLS_CONNECT(hostname, port,
+                        ca_store = system_trusted_CAs,
+                        check_hostname = TRUE,     // reject CN/SAN mismatch
+                        reject_unauthorized = TRUE) // never silently accept
+    ASSERT conn.certificate.issued_for == hostname
+    ASSERT conn.certificate.chain_is_trusted
+    ASSERT conn.protocol_version >= TLS1.2
+    RETURN conn
+
+PROCEDURE handshake_result(conn):
+    // TLS gives the channel its properties:
+    //  - authentication: the server proved possession of the private key
+    //    matching the validated certificate
+    //  - confidentiality: session keys (ECDHE) encrypt all traffic
+    //  - integrity: AEAD (e.g. AES-GCM / ChaCha20-Poly1305) detects any
+    //    modified, reordered or replayed record and aborts the connection
+    //  - forward secrecy: ephemeral keys mean recorded traffic stays safe
+    //    even if the server key leaks later
+    RETURN conn.negotiated_cipher, conn.protocol_version
+
+PROCEDURE send_message(conn, plaintext):
+    conn.WRITE(plaintext)   // encrypted + integrity-protected by the record layer
+
+PROCEDURE receive_message(conn) -> plaintext:
+    msg <- conn.READ()
+    ON integrity_failure: ABORT connection      // tamper evidence
+    RETURN msg
+
+// WHAT DEFEATS A MAN IN THE MIDDLE
+// 1. An attacker presenting a self-made certificate fails CA validation.
+// 2. An attacker replaying a real certificate for another host fails the
+//    hostname check.
+// 3. An attacker relaying bytes between the real endpoints cannot read or
+//    modify them: without the session keys the records are opaque, and any
+//    edit fails AEAD verification.
+// 4. Optional hardening in production: HSTS (browsers refuse plain HTTP),
+//    certificate pinning (app trusts only the expected certificate or CA),
+//    and rejecting deprecated protocol versions and ciphers.
+
+END MODULE
