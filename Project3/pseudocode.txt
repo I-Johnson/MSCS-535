@@ -1,0 +1,38 @@
+PSEUDOCODE: SECURING AN ONLINE PAYMENT SYSTEM
+(Project 3 - SQL injection and cross-site scripting defenses)
+
+MODULE PaymentSystem
+
+PROCEDURE handle_login(username, password):
+    // DEFENSE: parameterized query - the SQL structure is fixed and the
+    // user input travels only as data, never as SQL text.
+    stmt <- PREPARE "SELECT id, password_hash FROM users WHERE username = ?"
+    BIND stmt, username
+    row <- EXECUTE stmt
+    IF row is empty OR NOT bcrypt_compare(password, row.password_hash):
+        RETURN generic_error("Invalid username or password")  // same message either way
+    start_session(row.id)
+
+PROCEDURE handle_payment(session, cardholder, amount, note):
+    // DEFENSE: input validation - whitelist what a payment may contain.
+    REQUIRE matches(cardholder, "^[A-Za-z .'-]{1,60}$")
+    REQUIRE is_decimal(amount) AND 0 < amount <= 10000
+    REQUIRE length(note) <= 200
+    // DEFENSE: parameterized INSERT - values are bound, never concatenated.
+    stmt <- PREPARE "INSERT INTO payments (user_id, cardholder, amount, note) VALUES (?, ?, ?, ?)"
+    BIND stmt, session.user_id, cardholder, amount, note
+    EXECUTE stmt
+
+PROCEDURE show_payments(session):
+    rows <- EXECUTE PREPARED "SELECT cardholder, amount, note FROM payments WHERE user_id = ?" BIND session.user_id
+    // DEFENSE: contextual output encoding - every untrusted value is HTML-escaped
+    // at the moment it is written into the page.
+    FOR EACH row:
+        EMIT "<p>" + html_escape(row.cardholder) + ": $" + html_escape(row.amount)
+              + " - " + html_escape(row.note) + "</p>"
+    // DEFENSE: Content Security Policy header on the response -
+    // inline scripts are refused, so injected markup cannot execute.
+    SET response header Content-Security-Policy:
+        "default-src 'self'; script-src 'self'; object-src 'none'"
+
+END MODULE
