@@ -1,0 +1,23 @@
+Project 3 test evidence - generated 2026-11-21 09:23 PST
+
+=== A. VULNERABLE APP (port 4201) ===
+--- A1. SQL injection login bypass: username = alice' -- , password = wrong ---
+Logged in as alice (user id 1) | executed: SELECT * FROM users WHERE username = 'alice' -- ' AND password = 'wrong'(The injected quote closes the string and -- comments out the password check: logged in without knowing the password.)
+
+--- A2. Stored XSS through the payment note ---
+POST /pay -> HTTP 302
+<h1>Payments</h1><p>Alice: $25 - <script>alert(document.cookie)</script></p>
+
+=== B. SECURED APP (port 4202) ===
+--- B1. Same injection payload fails - input is bound as data, never parsed as SQL: ---
+Invalid username or password
+--- B2. Real login still works (alice / winter2026): ---
+Logged in as alice
+--- B3. XSS note is stored but rendered inert (escaped at render): ---
+POST /pay -> HTTP 302
+<h1>Payments</h1><p>Alice: $25 - &lt;script&gt;alert(document.cookie)&lt;/script&gt;</p>
+--- B4. CSP header on every response (inline script refused): ---
+Content-Security-Policy: default-src 'self'; script-src 'self'; object-src 'none'; base-uri 'self'
+
+--- B5. Whitelist validation rejects malformed payment: ---
+Invalid payment details -> HTTP 400
